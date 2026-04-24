@@ -1,0 +1,70 @@
+name: Release to PyPI
+
+# Triggers on pushing a SemVer tag like `v0.1.0`, `v1.2.3` to this
+# repo. Build the sdist + wheel, upload to PyPI using the stored
+# `PYPI_API_TOKEN` secret.
+#
+# Pre-release procedure:
+#   1. Update `version` in pyproject.toml (must match the tag — the
+#      test step below fails the job otherwise, catching the mistake
+#      before it ends up on PyPI).
+#   2. Commit + merge to main.
+#   3. `git tag vX.Y.Z && git push origin vX.Y.Z` — this workflow fires.
+#   4. Verify the new release page at https://pypi.org/project/agentdisco/
+#
+# Rotation plan: the initial token is account-wide because the project
+# didn't exist when the token was issued. Once `agentdisco` is claimed
+# on PyPI, rotate to a project-scoped token at
+# https://pypi.org/manage/account/token/ and update this secret via
+# `gh secret set PYPI_API_TOKEN --repo agentdisco/agentdisco-python-sdk`.
+# A later migration to trusted-publisher OIDC is worth doing once we
+# have a cadence of releases; removes the stored-secret attack surface
+# entirely.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    name: Build + publish
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/agentdisco/
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tooling
+        run: pip install --upgrade build twine
+
+      - name: Assert tag matches pyproject.toml version
+        # Guardrail: refuse to publish `v0.2.0` when pyproject still
+        # says `0.1.0`. That mismatch would land a bogus version on
+        # PyPI (twine uses the sdist metadata, not the tag).
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PYPROJECT="$(python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")"
+          if [ "$TAG" != "$PYPROJECT" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match pyproject.toml version ${PYPROJECT}"
+            exit 1
+          fi
+
+      - name: Build sdist + wheel
+        run: python -m build
+
+      - name: Check artifacts
+        run: python -m twine check dist/*
+
+      - name: Upload to PyPI
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: python -m twine upload --non-interactive dist/*
