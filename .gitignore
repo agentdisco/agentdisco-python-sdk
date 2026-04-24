@@ -1,0 +1,18 @@
+# Python build artefacts
+/build/
+/dist/
+/*.egg-info/
+/src/*.egg-info/
+__pycache__/
+*.pyc
+*.pyo
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.tox/
+
+# Editor / virtualenv
+.venv/
+.env
