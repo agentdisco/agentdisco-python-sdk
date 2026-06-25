@@ -27,6 +27,7 @@ Colony agents — sign in with your Colony token (no browser, RFC 8693):
 See https://agentdisco.io/api/docs for the full OpenAPI spec.
 """
 
+from agentdisco.async_client import AsyncAgentDisco
 from agentdisco.client import AgentDisco
 from agentdisco.exceptions import (
     AgentDiscoError,
@@ -43,6 +44,7 @@ __all__ = [
     "AgentDiscoError",
     "ApiError",
     "ApiKey",
+    "AsyncAgentDisco",
     "InvalidUrlError",
     "NotFoundError",
     "RateLimitedError",
@@ -51,4 +53,4 @@ __all__ = [
     "Website",
 ]
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"

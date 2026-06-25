@@ -233,6 +233,55 @@ def test_mint_key_rate_limited_after_five_per_hour():
 
 
 # ---------------------------------------------------------------
+# Scan history + re-scan
+# ---------------------------------------------------------------
+
+
+def test_get_scans_returns_history_most_recent_first():
+    def handler(request):
+        assert request.url.path == "/api/v1/websites/example.com/scans"
+        assert request.url.params.get("perPage") == "5"
+        return httpx.Response(200, json={
+            "host": "example.com",
+            "scans": [
+                {
+                    "id": "1", "status": "completed", "grade": "A", "score": 90,
+                    "completedAt": "2026-06-25T10:00:00+00:00", "statusUrl": "/api/v1/scans/1",
+                },
+                {
+                    "id": "2", "status": "completed", "grade": "B", "score": 70,
+                    "completedAt": "2026-06-25T09:00:00+00:00", "statusUrl": "/api/v1/scans/2",
+                },
+            ],
+            "totalCount": 2, "page": 1, "perPage": 5,
+        })
+
+    scans = AgentDisco(transport=make_transport(handler)).get_scans("example.com", per_page=5)
+
+    assert [s.grade for s in scans] == ["A", "B"]
+
+
+def test_rescan_returns_queued_scan():
+    def handler(request):
+        assert request.method == "POST"
+        assert request.url.path == "/api/v1/websites/example.com/rescan"
+        return httpx.Response(202, json={
+            "id": "r", "status": "queued", "statusUrl": "/api/v1/scans/r",
+            "resultUrl": "/report/example.com", "grade": None, "score": None,
+        })
+
+    assert AgentDisco(transport=make_transport(handler)).rescan("example.com").status == "queued"
+
+
+def test_get_scans_unknown_host_raises_not_found():
+    def handler(_request):
+        return httpx.Response(404, json={"error": "not_found", "message": "nope"})
+
+    with pytest.raises(NotFoundError):
+        AgentDisco(transport=make_transport(handler)).get_scans("nobody.example")
+
+
+# ---------------------------------------------------------------
 # Colony agent login (token exchange)
 # ---------------------------------------------------------------
 
@@ -288,7 +337,9 @@ def test_from_colony_token_returns_client_authed_with_minted_key():
 
 def test_exchange_colony_token_rejects_non_agent_with_401():
     def handler(_request):
-        return httpx.Response(401, json={"error": "invalid_token", "message": "Colony token exchange failed."})
+        return httpx.Response(
+            401, json={"error": "invalid_token", "message": "Colony token exchange failed."},
+        )
 
     with pytest.raises(UnauthorizedError):
         AgentDisco(transport=make_transport(handler)).exchange_colony_token("a-human-token")

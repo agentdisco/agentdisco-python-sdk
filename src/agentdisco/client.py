@@ -15,19 +15,12 @@ from typing import Any
 
 import httpx
 
-from agentdisco.exceptions import (
-    AgentDiscoError,
-    ApiError,
-    InvalidUrlError,
-    NotFoundError,
-    RateLimitedError,
-    UnauthorizedError,
-)
+from agentdisco._response import parse_json
 from agentdisco.models import ApiKey, Scan, Website
 
 DEFAULT_BASE_URL = "https://agentdisco.io"
 DEFAULT_TIMEOUT = 30.0
-_USER_AGENT = "agentdisco-python/0.2.0"
+_USER_AGENT = "agentdisco-python/0.3.0"
 
 
 class AgentDisco:
@@ -131,6 +124,31 @@ class AgentDisco:
         payload = self._parse(response)
         return Website.from_response(payload)
 
+    def get_scans(self, host: str, *, page: int = 1, per_page: int = 10) -> list[Scan]:
+        """A page of a host's completed-scan history, most-recent first.
+
+        `per_page` is capped server-side at 50. Track a grade trend by
+        paging through. Raises `NotFoundError` for an unknown/unlisted host.
+        """
+        response = self._http.get(
+            f"/api/v1/websites/{host}/scans",
+            params={"page": page, "perPage": per_page},
+        )
+        payload = self._parse(response)
+        return [Scan.from_response(s) for s in payload.get("scans", [])]
+
+    def rescan(self, host: str) -> Scan:
+        """Queue a fresh scan of an already-known host. Returns the queued
+        Scan (poll `get_scan(scan.id)` until completed).
+
+        Counts against your scan rate limit like `submit_scan` — present a
+        token for the higher per-key quota. Raises `NotFoundError` for an
+        unknown/unlisted host, `RateLimitedError` when the quota is spent.
+        """
+        response = self._http.post(f"/api/v1/websites/{host}/rescan")
+        payload = self._parse(response)
+        return Scan.from_response(payload)
+
     # -------------------------------------------------------------
     # API keys
     # -------------------------------------------------------------
@@ -209,62 +227,8 @@ class AgentDisco:
     # -------------------------------------------------------------
 
     def _parse(self, response: httpx.Response) -> dict[str, Any]:
-        """Extract JSON body; raise the right exception on 4xx/5xx.
+        """Extract the JSON body; raise the right exception on 4xx/5xx.
 
-        Returns the raw dict — each caller wraps in its dataclass.
+        Shared with the async client via {@link parse_json}.
         """
-        if 200 <= response.status_code < 300:
-            try:
-                body = response.json()
-            except ValueError as exc:
-                raise AgentDiscoError(
-                    f"server returned {response.status_code} with non-JSON body",
-                ) from exc
-            if not isinstance(body, dict):
-                raise AgentDiscoError(
-                    f"server returned {response.status_code} with non-object JSON",
-                )
-            return body
-
-        # Best-effort body parse so the error carries the server's
-        # error code + message; don't fail the wrap if the body isn't
-        # JSON (it usually is for /api/v1 but some 5xx paths return
-        # plain text).
-        payload: dict[str, Any] = {}
-        try:
-            parsed = response.json()
-            if isinstance(parsed, dict):
-                payload = parsed
-        except ValueError:
-            pass
-
-        message = str(payload.get("message") or payload.get("error") or response.text or "").strip()
-        if message == "":
-            message = f"HTTP {response.status_code} from Agent Disco API"
-        error_code = payload.get("error") if isinstance(payload.get("error"), str) else None
-
-        status = response.status_code
-        kwargs: dict[str, Any] = {
-            "status_code": status,
-            "error_code": error_code,
-            "payload": payload,
-        }
-
-        if status == 400 and error_code == "invalid_url":
-            raise InvalidUrlError(message, **kwargs)
-        if status == 401:
-            raise UnauthorizedError(message, **kwargs)
-        if status == 404:
-            raise NotFoundError(message, **kwargs)
-        if status == 429:
-            retry_after = response.headers.get("Retry-After")
-            retry_after_seconds = (
-                int(retry_after) if retry_after and retry_after.isdigit() else None
-            )
-            raise RateLimitedError(
-                message,
-                retry_after_seconds=retry_after_seconds,
-                **kwargs,
-            )
-
-        raise ApiError(message, **kwargs)
+        return parse_json(response)
