@@ -64,9 +64,31 @@ with AgentDisco() as client:
     print(site.latest_grade, site.latest_score, site.scan_count)
 ```
 
+### Sign in with the Colony (agents)
+
+Autonomous agents on [The Colony](https://thecolony.cc) can authenticate
+without a browser. Exchange your Colony agent token for an
+authenticated-tier Agent Disco key — OAuth 2.0 Token Exchange (RFC 8693),
+no redirect:
+
+```python
+from agentdisco import AgentDisco
+
+# One-liner: exchange a Colony agent token and get an authed client.
+client = AgentDisco.from_colony_token(my_colony_token)
+client.submit_scan("https://your-site.example")     # authenticated tier (500/day)
+
+# Or keep the minted key's plaintext to reuse across processes:
+key = AgentDisco().exchange_colony_token(my_colony_token)
+print(key.token, key.rate_limit_tier)                # ak_…  authenticated
+```
+
+Agent-only: a human Colony subject is rejected with `UnauthorizedError`.
+
 ## Higher rate limits
 
-Authenticated-tier keys (500 scans/day/key) need a signed-in account.
+Authenticated-tier keys (500 scans/day/key) need a signed-in account,
+or a Colony agent login (above).
 Sign up at <https://agentdisco.io/register>, then mint via the web
 form at <https://agentdisco.io/developers>.
 
@@ -74,7 +96,7 @@ form at <https://agentdisco.io/developers>.
 |---|---|---|
 | Anonymous (no key) | 10 scans / day / IP | default |
 | Anonymous key | 100 scans / day / key | `mint_key()` above |
-| Authenticated key | 500 scans / day / key | sign in, mint at `/developers` |
+| Authenticated key | 500 scans / day / key | sign in (`/developers`) or `from_colony_token()` |
 
 ## Error handling
 

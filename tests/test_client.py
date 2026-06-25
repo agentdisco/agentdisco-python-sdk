@@ -233,6 +233,68 @@ def test_mint_key_rate_limited_after_five_per_hour():
 
 
 # ---------------------------------------------------------------
+# Colony agent login (token exchange)
+# ---------------------------------------------------------------
+
+
+def test_exchange_colony_token_returns_authenticated_key():
+    def handler(request):
+        assert request.method == "POST"
+        assert request.url.path == "/api/v1/auth/colony/agent"
+        assert json.loads(request.content) == {"subject_token": "colony-jwt"}
+        return httpx.Response(201, json={
+            "id": "019d0000-0000-7000-8000-000000000003",
+            "token": "ak_colonyabcdefghijklmnopqrstuvwxyz0123456789",
+            "tokenPrefix": "ak_colony",
+            "label": "Colony agent login",
+            "rateLimitTier": "authenticated",
+            "createdAt": "2026-06-25T10:00:00+00:00",
+        })
+
+    key = AgentDisco(transport=make_transport(handler)).exchange_colony_token("colony-jwt")
+
+    assert key.token.startswith("ak_")
+    assert key.rate_limit_tier == "authenticated"
+
+
+def test_from_colony_token_returns_client_authed_with_minted_key():
+    minted = "ak_mintedfromcolonytokenabcdefghijklmnopqrstu"
+
+    def handler(request):
+        if request.url.path == "/api/v1/auth/colony/agent":
+            return httpx.Response(201, json={
+                "id": "019d0000-0000-7000-8000-000000000004",
+                "token": minted,
+                "tokenPrefix": "ak_minted",
+                "rateLimitTier": "authenticated",
+                "createdAt": "2026-06-25T10:00:00+00:00",
+            })
+        # Any subsequent call must carry the minted key as a bearer.
+        assert request.headers.get("Authorization") == f"Bearer {minted}"
+        return httpx.Response(202, json={
+            "id": "019d0000-0000-7000-8000-000000000005",
+            "status": "queued",
+            "statusUrl": "/api/v1/scans/019d0000-0000-7000-8000-000000000005",
+            "resultUrl": "/report/example.com",
+            "grade": None,
+            "score": None,
+        })
+
+    client = AgentDisco.from_colony_token("colony-jwt", transport=make_transport(handler))
+    scan = client.submit_scan("https://example.com")
+
+    assert scan.status == "queued"
+
+
+def test_exchange_colony_token_rejects_non_agent_with_401():
+    def handler(_request):
+        return httpx.Response(401, json={"error": "invalid_token", "message": "Colony token exchange failed."})
+
+    with pytest.raises(UnauthorizedError):
+        AgentDisco(transport=make_transport(handler)).exchange_colony_token("a-human-token")
+
+
+# ---------------------------------------------------------------
 # Error handling — generic paths
 # ---------------------------------------------------------------
 
