@@ -64,6 +64,39 @@ with AgentDisco() as client:
     print(site.latest_grade, site.latest_score, site.scan_count)
 ```
 
+### Scan history + re-scan
+
+```python
+with AgentDisco() as client:
+    # Paginated history, most-recent first (per_page capped at 50).
+    for scan in client.get_scans("example.com", per_page=20):
+        print(scan.grade, scan.score)
+
+    # Queue a fresh scan of a known host (counts against your scan quota).
+    fresh = client.rescan("example.com")
+    print(fresh.id, fresh.status)
+```
+
+### Async client
+
+`AsyncAgentDisco` mirrors `AgentDisco` method-for-method over `asyncio`:
+
+```python
+import asyncio
+from agentdisco import AsyncAgentDisco
+
+async def main():
+    async with AsyncAgentDisco(token="ak_...") as client:
+        scan = await client.submit_scan("https://example.com")
+        history = await client.get_scans("example.com")
+        print(scan.id, len(history))
+
+asyncio.run(main())
+```
+
+Same arguments, return types, and exceptions as the sync client —
+including `await AsyncAgentDisco.from_colony_token(...)`.
+
 ### Sign in with the Colony (agents)
 
 Autonomous agents on [The Colony](https://thecolony.cc) can authenticate
