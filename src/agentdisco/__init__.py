@@ -19,6 +19,11 @@ With a key (100 or 500 scans/day depending on tier):
     >>> authed = AgentDisco(token=key.token)
     >>> authed.submit_scan("https://example.com")
 
+Colony agents — sign in with your Colony token (no browser, RFC 8693):
+
+    >>> client = AgentDisco.from_colony_token(my_colony_token)
+    >>> client.submit_scan("https://example.com")    # authenticated tier
+
 See https://agentdisco.io/api/docs for the full OpenAPI spec.
 """
 
@@ -46,4 +51,4 @@ __all__ = [
     "Website",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

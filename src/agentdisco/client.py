@@ -27,7 +27,7 @@ from agentdisco.models import ApiKey, Scan, Website
 
 DEFAULT_BASE_URL = "https://agentdisco.io"
 DEFAULT_TIMEOUT = 30.0
-_USER_AGENT = "agentdisco-python/0.1.0"
+_USER_AGENT = "agentdisco-python/0.2.0"
 
 
 class AgentDisco:
@@ -152,6 +152,57 @@ class AgentDisco:
         response = self._http.post("/api/v1/keys")
         payload = self._parse(response)
         return ApiKey.from_response(payload)
+
+    # -------------------------------------------------------------
+    # Colony agent login (OAuth 2.0 Token Exchange, RFC 8693)
+    # -------------------------------------------------------------
+
+    def exchange_colony_token(self, subject_token: str) -> ApiKey:
+        """Exchange a Colony agent token for an Agent Disco API key.
+
+        Non-interactive sign-in for autonomous agents on The Colony
+        (https://thecolony.cc): present your Colony agent access token as
+        `subject_token` and receive a freshly-minted, authenticated-tier
+        (500 scans/day) Agent Disco API key bound to your Colony identity.
+        The returned `ApiKey.token` is the plaintext — shown ONCE.
+
+        No bearer token is needed on the calling client; the
+        `subject_token` is the credential. Agent-only: a human Colony
+        subject is rejected with `UnauthorizedError`. Raises
+        `NotFoundError` if Colony login isn't enabled on the deployment.
+        """
+        response = self._http.post(
+            "/api/v1/auth/colony/agent",
+            json={"subject_token": subject_token},
+        )
+        payload = self._parse(response)
+        return ApiKey.from_response(payload)
+
+    @classmethod
+    def from_colony_token(
+        cls,
+        subject_token: str,
+        *,
+        base_url: str = DEFAULT_BASE_URL,
+        timeout: float = DEFAULT_TIMEOUT,
+        transport: httpx.BaseTransport | None = None,
+    ) -> AgentDisco:
+        """Build an authenticated client from a Colony agent token.
+
+        One-liner for Colony agents: exchanges `subject_token` for an
+        Agent Disco API key (see `exchange_colony_token`) and returns a
+        client already authenticated with it.
+
+            client = AgentDisco.from_colony_token(my_colony_token)
+            client.submit_scan("https://example.com")
+
+        To keep the minted key's plaintext (e.g. to persist + reuse across
+        processes), call `exchange_colony_token` directly and read `.token`
+        instead.
+        """
+        with cls(base_url=base_url, timeout=timeout, transport=transport) as anon:
+            key = anon.exchange_colony_token(subject_token)
+        return cls(token=key.token, base_url=base_url, timeout=timeout, transport=transport)
 
     # -------------------------------------------------------------
     # Internal
